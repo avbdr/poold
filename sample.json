@@ -1,0 +1,62 @@
+{
+    "mqtt": {
+    	"host": "192.168.1.8",
+    	"port" : 1883,
+	    "clientId": "engineroom-rpc",
+    	"username": "myuser",
+    	"password": "mypass"
+    },
+
+    "serial": {
+        "port": "/dev/mock",
+	    "baudrate": 19200
+    },
+
+    "units": {
+        "poolHeater" : {
+            "type": "gpio",
+            "relayId": 1,
+            "gpio": 5
+        },
+        "poolPumpNew" : {
+                "type": "haywardvsp",
+                "address": 0,
+                "debug": "false"
+        },
+        "spaHeater" : {
+                "type": "gpio",
+                "relayId": 2,
+                "gpio": 6
+        },
+        "poolPump" : {
+                "type": "gpio",
+                "relayId": 3,
+                "gpio": 13
+        },
+        "spaPump" : {
+                "type": "gpio",
+                "relayId": 4,
+                "gpio": 19
+        },
+
+        "waterfallOn": {
+                "type": "gpio",
+                "relayId": 5,
+                "gpio": 26
+        },
+        "waterfallOff": {
+                "type": "gpio",
+                "relayId": 6,
+                "gpio": 21
+        },
+
+        "waterfallIsOn" : {
+            "type": "gpio",
+            "relayId": 99,
+            "gpio": 17,
+            "gpioMode": "in",
+            "gpioEdgeMode": "rising"
+        }
+
+    }
+}
