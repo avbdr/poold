@@ -1,0 +1,13 @@
+[Unit]
+Description=poold - MQTT Pool Controller 
+Documentation=https://github.com/avbdr/poold
+After=network.target
+
+[Service]
+Type=simple
+User=root
+ExecStart=/usr/bin/node /srv/poold/poold.js
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target
