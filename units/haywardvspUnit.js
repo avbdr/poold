@@ -1,7 +1,9 @@
 const rpmFromPercent = require('../utils').rpmFromPercent;
 const rpmToPercent =require('../utils').rpmToPercent;
 const dec2hex = require('../utils').dec2hex;
+const now = require('../utils').now;
 const serialWrite = require('../utils').serialWrite;
+const startWatchdog = require('../utils').startWatchdog;
 const { DelimiterParser } = require('@serialport/parser-delimiter')
 
 class haywardvspUnit {
@@ -23,8 +25,10 @@ class haywardvspUnit {
         this.watts = 0;
         this.address = opts.address;
         this.myself = 1;
+        this.lastReply = now();
         console.log("Initializing Hayward Tristar/Ecostar VS Pump");
         this.setRemoteControl();
+        this.initWatchdog();
 
         // initialize rs485 connection
         const parser = this.serial.pipe(new DelimiterParser({ includeDelimiter: true, delimiter: Buffer.from([0x10,0x03]) }));
@@ -78,7 +82,8 @@ class haywardvspUnit {
 
     setSpeed(speed) {
         if (speed < this.minSpeed || speed > this.maxSpeed) {
-            return JSON.stringify({"status": "Error", "message": "Wrong speed requested"});
+            if (speed != 0)
+                return JSON.stringify({"status": "Error", "message": "Wrong speed requested"});
         }
 
         var percent = rpmToPercent (this.maxSpeed, speed);
@@ -86,16 +91,32 @@ class haywardvspUnit {
         console.log("[haywardvsp] Clearing Timer #" + this.timer);
         clearTimeout(this.timer);
         var req = this.buildRequest (this.PUMP_SET_SPEED_REQ, percent);
-        // every 5 seconds we have to repeat the command to the pump. Otherwise it will shut down
-        serialWrite (req, this.PUMP_RESEND_INTERVAL, this);
-        return JSON.stringify({"status": "OK"});
+        if (speed > 0) {
+            // every 5 seconds we have to repeat the command to the pump. Otherwise it will shut down
+            serialWrite (req, this.PUMP_RESEND_INTERVAL, this);
+        } else {
+            serialWrite (req);
+        }
+        this.speed = speed;
+        return JSON.stringify({"status": "ON", "speed": this.speed});
     }
 
     setRemoteControl() {
-        console.log ("[haywardvsp] Requesting Pump Control");
-        clearTimeout(this.timer);
+        console.log ("[haywardvsp] Requesting Remote Pump Control");
         var req = this.buildRequest (this.PUMP_REMOTE_CONTROL_REQ, 0, this.PUMP_BROADCAST_ADDRESS);
         serialWrite (req);
+    }
+
+    initWatchdog() {
+        startWatchdog(this, (delta) => {
+            if (this.speed == 0)
+                return;
+            console.log("Pump is not answering for %d sec. Will retry in 30 seconds", delta);
+            this.speed = 0;
+            this.watts = 0;
+            this.app.publishUnitsState(this.cfg.name);
+            this.setRemoteControl();
+        });
     }
 
     processReply(data) {
@@ -139,6 +160,7 @@ class haywardvspUnit {
         var speedPercent = parseInt(data[6], 16);
         this.speed = rpmFromPercent(this.maxSpeed, speedPercent);
         this.watts = parseInt(data[7], 16) + parseInt(data[8], 16);
+        this.lastReply = now();
         console.log ("[haywardvsp] Reply from: %d to: %d action: %d unknown bit: %d speed: %dRPM (%d%) consumption: %dW",
                                                 src, dst, action, unknown, this.speed, speedPercent, this.watts);
         if (action == this.PUMP_SET_SPEED_REQ) {
