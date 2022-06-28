@@ -28,6 +28,25 @@ function serialWrite(data, interval, device) {
     }
 }
 
+function startWatchdog (device, cb) {
+    const WATCHDOG_MAX_WAIT = 30;
+    const WATCHDOG_CHECK_INTERVAL = 20;
+    if (!device)
+        return;
+
+    var delta = now() - device.lastReply;
+    if (delta > WATCHDOG_MAX_WAIT) {
+        cb(delta);
+    }
+
+    device.watchdogTimer = setTimeout(function() {
+        startWatchdog(device, cb);
+    }, WATCHDOG_CHECK_INTERVAL * 1000);
+}
+
+function now() {
+    return Math.floor(new Date().getTime() / 1000);
+}
 
 var log = console.log;
 console.log = function () {
@@ -56,3 +75,5 @@ module.exports.rpmFromPercent = rpmFromPercent;
 module.exports.rpmToPercent = rpmToPercent;
 module.exports.dec2hex = dec2hex;
 module.exports.serialWrite = serialWrite;
+module.exports.startWatchdog = startWatchdog;
+module.exports.now = now;
