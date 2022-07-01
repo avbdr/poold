@@ -93,9 +93,9 @@ class haywardvspUnit {
         var req = this.buildRequest (this.PUMP_SET_SPEED_REQ, percent);
         if (speed > 0) {
             // every 5 seconds we have to repeat the command to the pump. Otherwise it will shut down
-            serialWrite (req, this.PUMP_RESEND_INTERVAL, this);
+            serialWrite (req, this, this.PUMP_RESEND_INTERVAL);
         } else {
-            serialWrite (req);
+            serialWrite (req, device);
         }
         this.speed = speed;
         return JSON.stringify({"status": "ON", "speed": this.speed});
@@ -103,8 +103,8 @@ class haywardvspUnit {
 
     setRemoteControl() {
         console.log ("[haywardvsp] Requesting Remote Pump Control");
-        var req = this.buildRequest (this.PUMP_REMOTE_CONTROL_REQ, 0, this.PUMP_BROADCAST_ADDRESS);
-        serialWrite (req);
+        var req = this.buildRequest (this.PUMP_REMOTE_CONTROL_REQ, 255, this.PUMP_BROADCAST_ADDRESS);
+        serialWrite (req, this);
     }
 
     initWatchdog() {

@@ -12,7 +12,7 @@ function dec2hex(num, padding) {
     return "0x" + num.toString(16).padStart(padding, '0')
 }
 
-function serialWrite(data, interval, device) {
+function serialWrite(data, device, interval) {
     if (device && device.serial) {
         device.serial.write(data, function(err) {
             console.log("[HaywardVSP]  sent: ", data);
@@ -23,7 +23,7 @@ function serialWrite(data, interval, device) {
 
     if (interval && device) {
         device.timer = setTimeout(function() {
-            serialWrite(data, interval, device);
+            serialWrite(data, device, interval);
         }, interval);
     }
 }

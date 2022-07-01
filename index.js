@@ -68,7 +68,7 @@ function initSerial () {
         path: cfg.serial.port,
         baudRate: cfg.serial.baudrate,
         dataBits: 8, stopBits: 2, parity: 'none',
-        binding: MockBinding
+        //binding: MockBinding
     });
 }
 
