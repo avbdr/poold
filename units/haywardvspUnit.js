@@ -159,7 +159,6 @@ class haywardvspUnit {
         var speedPercent = data[6];
         console.log(speedPercent, data[6]);
         this.speed = rpmFromPercent(this.maxSpeed, speedPercent);
-        //this.watts = parseInt(data[7], 16) + parseInt(data[8], 16);
         this.watts = data[7] + data[8];
         this.lastReply = now();
         console.log ("[haywardvsp] Reply from: %d to: %d action: %d unknown bit: %d speed: %dRPM (%d%) consumption: %dW",
