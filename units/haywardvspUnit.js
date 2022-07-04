@@ -27,7 +27,6 @@ class haywardvspUnit {
         this.myself = 1;
         this.lastReply = now();
         console.log("Initializing Hayward Tristar/Ecostar VS Pump");
-        this.setRemoteControl();
         this.initWatchdog();
 
         // initialize rs485 connection
@@ -35,6 +34,7 @@ class haywardvspUnit {
         parser.on('data', (data) => {
             this.processReply(data);
         });
+        this.setRemoteControl();
     }
     
     buildRequest (action, payload, addressOverwrite) {
@@ -93,9 +93,9 @@ class haywardvspUnit {
         var req = this.buildRequest (this.PUMP_SET_SPEED_REQ, percent);
         if (speed > 0) {
             // every 5 seconds we have to repeat the command to the pump. Otherwise it will shut down
-            serialWrite (req, this.PUMP_RESEND_INTERVAL, this);
+            serialWrite (req, this, this.PUMP_RESEND_INTERVAL);
         } else {
-            serialWrite (req);
+            serialWrite (req, this);
         }
         this.speed = speed;
         return JSON.stringify({"status": "ON", "speed": this.speed});
@@ -104,7 +104,7 @@ class haywardvspUnit {
     setRemoteControl() {
         console.log ("[haywardvsp] Requesting Remote Pump Control");
         var req = this.buildRequest (this.PUMP_REMOTE_CONTROL_REQ, 0, this.PUMP_BROADCAST_ADDRESS);
-        serialWrite (req);
+        serialWrite (req, this);
     }
 
     initWatchdog() {
@@ -149,7 +149,7 @@ class haywardvspUnit {
         }
 
         var crc = data[0] + data[1] + data[2] + data[3] + data[4] + data[5] + data[6] + data[7] + data[8];
-        if (crc != data[10]) {
+        if (crc != data[9] + data[10]) {
             console.log ("[haywardvsp] CRC mismatch. expected: %d received: %d", crc, data[10]);
             return;
         }
@@ -157,9 +157,9 @@ class haywardvspUnit {
         var action = data[3];
         var dst = data[4];
         var unknown = parseInt(data[5], 16);
-        var speedPercent = parseInt(data[6], 16);
+        var speedPercent = data[6];
         this.speed = rpmFromPercent(this.maxSpeed, speedPercent);
-        this.watts = parseInt(data[7], 16) + parseInt(data[8], 16);
+        this.watts = parseInt(data[7].toString(16) + data[8].toString(16), 10);
         this.lastReply = now();
         console.log ("[haywardvsp] Reply from: %d to: %d action: %d unknown bit: %d speed: %dRPM (%d%) consumption: %dW",
                                                 src, dst, action, unknown, this.speed, speedPercent, this.watts);
