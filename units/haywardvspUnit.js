@@ -13,6 +13,7 @@ class haywardvspUnit {
     PUMP_RESEND_INTERVAL = 5000;
     PUMP_ANSWER_LENGTH = 13;
     maxSpeed = 3450;
+    avgSpeed = 1450;
     minSpeed = 350;
 
     constructor(app, opts) {
@@ -20,13 +21,15 @@ class haywardvspUnit {
         this.cfg = opts;
         this.serial = app.serial;
         this.timer = 0;
-        this.speed = 0;
+        this.status = "OFF";
+        this.reqSpeed = 0;
+        this.curSpeed = 0;
         this.watts = 0;
+
         this.address = opts.address;
         this.myself = 1;
         this.lastReply = now();
         console.log("Initializing Hayward Tristar/Ecostar VS Pump");
-        this.setRemoteControl();
         this.initWatchdog();
 
         // initialize rs485 connection
@@ -68,18 +71,21 @@ class haywardvspUnit {
     }
 
     getStatus() {
-        var isActive = 'OFF';
-        if (this.speed > 0) isActive = 'ON';
-
         var reply = {
-            'status': isActive,
-            'speed': this.speed,
+            'status': this.status,
+            'speed': this.curSpeed,
             'watts': this.watts
         };
         return JSON.stringify(reply);
     }
 
-    setSpeed(speed) {
+    setSpeed(speed, speedOverride) {
+        if (speed == 'ON')
+            speed = this.avgSpeed;
+
+        if (speed == 'OFF')
+            speed = 0;
+
         if (speed < this.minSpeed || speed > this.maxSpeed) {
             if (speed != 0)
                 return JSON.stringify({"status": "Error", "message": "Wrong speed requested"});
@@ -91,13 +97,16 @@ class haywardvspUnit {
         clearTimeout(this.timer);
         var req = this.buildRequest (this.PUMP_SET_SPEED_REQ, percent);
         if (speed > 0) {
+            this.status = "ON";
             // every 5 seconds we have to repeat the command to the pump. Otherwise it will shut down
             serialWrite (req, this, this.PUMP_RESEND_INTERVAL);
         } else {
-            serialWrite (req, device);
+            this.status = "OFF";
+            serialWrite (req, this);
         }
-        this.speed = speed;
-        return JSON.stringify({"status": "ON", "speed": this.speed});
+        if (!speedOverride)
+            this.reqSpeed = speed;
+        return this.getStatus();
     }
 
     setRemoteControl() {
@@ -108,13 +117,17 @@ class haywardvspUnit {
 
     initWatchdog() {
         startWatchdog(this, (delta) => {
-            if (this.speed == 0)
+            if (this.status == 'OFF')
                 return;
-            console.log("Pump is not answering for %d sec. Will retry in 30 seconds", delta);
-            this.speed = 0;
+
+            console.log("Pump is not answering for %d sec. Priming for 1 minute", delta);
             this.watts = 0;
+            this.setSpeed(this.maxSpeed - 150, true);
+            /*setTimeout(function() {
+                console.log("resetting pump speed back to %s", this.speed);
+                this.setSpeed(this.speed, true);
+            }, 60000);*/
             this.app.publishUnitsState(this.cfg.name);
-            this.setRemoteControl();
         });
     }
 
@@ -123,16 +136,17 @@ class haywardvspUnit {
         // [SOURCE ADD]: 1 byte. Byte Source Address [0x01] Source address can be 12(broadcast) in some operations
         // [ACTION]: 1 byte. action 12/0x0C -- set RPM,  action 1/0x01 -- set remote control
         // [DESTINATION ADD]: 1 byte. Byte Destination Address [0x0C]
+        // [STATUS]: 1 byte. Pump Returns 0 in case of successfull acction or 100 in case of failure
         // [SPEED] : 1- byte Data - RPM Data in Parentage 0% - 100% [0x64]
         // [WATTS] : 2 byte Data - Pump electricity consumption
         // [CHECKSUM] : 2 Byte Checksum [0x00 0x83]
         // [END OF PACKET BYTES]: 2-bytes fix bytes which indicates END of Packet [0x10 0x03]
-        //            src   act   dest        spd   watt1 watt2 crc1  crc2
+        //            src   act   dest  err   spd   watt1 watt2 crc1  crc2
         //0x10, 0x02, 0x00, 0x0C, 0x00, 0x00, 0x2D, 0x02, 0x36, 0x00, 0x83, 0x10, 0x03
 
         var len = data.length;
         if (len != this.PUMP_ANSWER_LENGTH) {
-            if (this.cfg.debug == "network") { console.log("[haywardvsp] Message of a wrong length: ", data); }
+            if (this.cfg.debug == "network") { console.log("[haywardvsp] Message of a wrong length %d: ", len, data); }
             return;
         }
         if (!(data[0] == 0x10 && data[1] == 0x02) && !(data[len - 2] == 0x10 && data[len - 1] == 0x03)) {
@@ -148,21 +162,28 @@ class haywardvspUnit {
         }
 
         var crc = data[0] + data[1] + data[2] + data[3] + data[4] + data[5] + data[6] + data[7] + data[8];
-        if (crc != data[10]) {
-            console.log ("[haywardvsp] CRC mismatch. expected: %d received: %d", crc, data[10]);
-            return;
+        if (crc != data[9] + data[10]) {
+            console.log ("[haywardvsp] CRC mismatch. expected: %d received: %d", crc, data[9] + data[10]);
+//            return;
         }
 
         var action = data[3];
         var dst = data[4];
-        var unknown = parseInt(data[5], 16);
+        var statusCode = parseInt(data[5], 16);
         var speedPercent = data[6];
-        console.log(speedPercent, data[6]);
-        this.speed = rpmFromPercent(this.maxSpeed, speedPercent);
-        this.watts = data[7] + data[8];
+        this.curSpeed = rpmFromPercent(this.maxSpeed, speedPercent);
+        this.watts = parseInt(data[7].toString(16) + data[8].toString(16), 10);
         this.lastReply = now();
-        console.log ("[haywardvsp] Reply from: %d to: %d action: %d unknown bit: %d speed: %dRPM (%d%) consumption: %dW",
-                                                src, dst, action, unknown, this.speed, speedPercent, this.watts);
+        if (this.cfg.debug == "network") {
+            console.log ("[haywardvsp] Reply from: %d to: %d action: %d status: %d speed: %dRPM (%d%) consumption: %dW",
+                         src, dst, action, statusCode, this.curSpeed, speedPercent, this.watts);
+        }
+
+        if (statusCode == 100) {
+            this.curSpeed = 0;
+            this.watts = 0;
+        }
+
         if (action == this.PUMP_SET_SPEED_REQ) {
             this.app.publishUnitsState(this.cfg.name);
         }
