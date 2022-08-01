@@ -29,8 +29,8 @@ function serialWrite(data, device, interval) {
 }
 
 function startWatchdog (device, cb) {
-    const WATCHDOG_MAX_WAIT = 30;
-    const WATCHDOG_CHECK_INTERVAL = 20;
+    const WATCHDOG_MAX_WAIT = 8;
+    const WATCHDOG_CHECK_INTERVAL = 4;
     if (!device)
         return;
 
